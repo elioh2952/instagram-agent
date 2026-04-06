@@ -260,6 +260,8 @@ def process_inbox(cl: Client):
             if is_seen(msg_id) or from_me:
                 continue
 
+            latest_text = latest.get("text", "").strip() if item_type == "text" else ""
+
             if elio_follows(cl, sender_id):
                 pref = get_followed_preference(sender_id)
 
@@ -316,7 +318,6 @@ def process_inbox(cl: Client):
                 mark_thread_read(cl, thread_id, msg_id)
                 continue
 
-            latest_text = latest.get("text", "").strip()
             if not latest_text:
                 mark_seen(msg_id)
                 continue
