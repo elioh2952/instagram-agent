@@ -72,7 +72,7 @@ def fetch_unread_threads(cl: Client) -> list:
                 "visual_message_return_type": "unseen",
                 "thread_message_limit": "1",
                 "persistentBadging": "true",
-                "limit": "20"
+                "limit": "10"   # cap at 10 to stay under radar
             })
             return data.get("inbox", {}).get("threads", [])
         except ClientConnectionError as e:
@@ -249,6 +249,7 @@ def process_inbox(cl: Client):
 
             mark_seen(msg_id)
             mark_thread_read(cl, thread_id, msg_id)
+            time.sleep(2)  # human-like delay between replies
 
         except LoginRequired:
             raise
