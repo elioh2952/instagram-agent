@@ -1,6 +1,7 @@
 import sys
 import time
 import os
+import random
 import unicodedata
 sys.stdout.reconfigure(encoding='utf-8')
 
@@ -12,7 +13,25 @@ from database import init_db, is_seen, mark_seen, save_message
 from ai import reply
 
 SESSION_FILE = "session.json"
-POLL_INTERVAL = 10
+
+# ── Human behavior simulation ────────────────────────────────────────────────
+
+def human_typing_delay(text: str):
+    """Simulate realistic typing time based on message length."""
+    chars_per_second = random.uniform(4, 8)  # avg human types 4-8 chars/sec
+    base_delay = len(text) / chars_per_second
+    # Add random thinking/pause time
+    thinking = random.uniform(1.5, 4.0)
+    total = min(base_delay + thinking, 12)  # cap at 12s
+    time.sleep(total)
+
+def human_read_delay():
+    """Simulate time to read the incoming message before typing."""
+    time.sleep(random.uniform(1.0, 3.0))
+
+def random_poll_interval() -> float:
+    """Slightly randomize polling so it never looks perfectly mechanical."""
+    return random.uniform(8, 14)
 
 # ── Error classifier ─────────────────────────────────────────────────────────
 
@@ -231,6 +250,9 @@ def process_inbox(cl: Client):
 
             print(f"[IN]  @{username}: {latest_text[:80]}")
 
+            # Simulate reading the message before responding
+            human_read_delay()
+
             all_items = get_thread_messages(cl, thread_id)
             conversation = build_conversation(all_items, my_id)
 
@@ -240,6 +262,10 @@ def process_inbox(cl: Client):
                 conversation.append({"role": "user", "content": latest_text})
 
             response_text = generate_reply(conversation)
+
+            # Simulate typing time before sending
+            human_typing_delay(response_text)
+
             sent = send_message(cl, response_text, thread_id, username)
 
             if sent:
@@ -277,7 +303,7 @@ def run():
             print(f"[!] Error ({err_type}): {e} — retrying in {wait}s")
             time.sleep(wait)
             continue
-        time.sleep(10)
+        time.sleep(random_poll_interval())
     print("[*] Done.")
 
 def run_loop():
@@ -304,7 +330,7 @@ def run_loop():
                 time.sleep(15)
             else:
                 print(f"[!] Error ({err_type}): {e}")
-        time.sleep(POLL_INTERVAL)
+        time.sleep(random_poll_interval())
 
 if __name__ == "__main__":
     if os.getenv("GITHUB_ACTIONS"):
