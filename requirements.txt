@@ -1,0 +1,3 @@
+instagrapi
+groq
+python-dotenv

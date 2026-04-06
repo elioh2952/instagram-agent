@@ -1,0 +1,7 @@
+.env
+session.json
+session_b64.txt
+agent.db
+__pycache__/
+*.pyc
+*.pyo
