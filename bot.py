@@ -9,7 +9,7 @@ from instagrapi import Client
 from instagrapi.exceptions import LoginRequired, ClientError, ClientConnectionError
 
 from config import INSTAGRAM_USERNAME, INSTAGRAM_PASSWORD
-from database import init_db, is_seen, mark_seen, save_message
+from database import init_db, is_seen, mark_seen, save_message, get_followed_preference, set_followed_preference
 from ai import reply
 
 SESSION_FILE = "session.json"
@@ -32,6 +32,38 @@ def human_read_delay():
 def random_poll_interval() -> float:
     """Slightly randomize polling so it never looks perfectly mechanical."""
     return random.uniform(8, 14)
+
+def notify_elio(username: str, message: str):
+    """Send instant push notification to Elio's phone via ntfy.sh."""
+    import urllib.request
+    topic = os.getenv("NTFY_TOPIC", "")
+    if not topic:
+        print(f"[!] No NTFY_TOPIC set — skipping notification for @{username}")
+        return
+    try:
+        body = f"@{username} wants to talk to you personally:\n\"{message[:100]}\""
+        req = urllib.request.Request(
+            f"https://ntfy.sh/{topic}",
+            data=body.encode("utf-8"),
+            headers={
+                "Title": f"Instagram: @{username} wants YOU",
+                "Priority": "high",
+                "Tags": "instagram,speech_balloon"
+            },
+            method="POST"
+        )
+        urllib.request.urlopen(req, timeout=5)
+        print(f"[NOTIFY] Elio notified about @{username}")
+    except Exception as e:
+        print(f"[!] Notification failed: {e}")
+
+def is_yes(text: str) -> bool:
+    yes_words = {"yes", "yeah", "yep", "sure", "ok", "okay", "fine", "agent", "assistant", "you", "go ahead", "oui", "ouais", "bien sûr"}
+    return any(w in text.lower() for w in yes_words)
+
+def is_no(text: str) -> bool:
+    no_words = {"no", "nope", "nah", "personally", "elio", "himself", "real", "non", "pas", "lui"}
+    return any(w in text.lower() for w in no_words)
 
 # ── Error classifier ─────────────────────────────────────────────────────────
 
@@ -229,8 +261,55 @@ def process_inbox(cl: Client):
                 continue
 
             if elio_follows(cl, sender_id):
-                mark_seen(msg_id)
-                continue
+                pref = get_followed_preference(sender_id)
+
+                if pref == "agent":
+                    # They chose agent — fall through to normal reply below
+                    pass
+
+                elif pref == "personal":
+                    # They want Elio personally — notify and ignore
+                    notify_elio(username, latest_text)
+                    mark_seen(msg_id)
+                    mark_thread_read(cl, thread_id, msg_id)
+                    continue
+
+                elif pref == "pending":
+                    # Already asked, waiting for answer — check if this is the answer
+                    if is_yes(latest_text):
+                        set_followed_preference(sender_id, username, "agent")
+                        response = "great, i'm here whenever you need anything"
+                        human_read_delay()
+                        human_typing_delay(response)
+                        send_message(cl, response, thread_id, username)
+                        mark_seen(msg_id)
+                        mark_thread_read(cl, thread_id, msg_id)
+                        continue
+                    elif is_no(latest_text):
+                        set_followed_preference(sender_id, username, "personal")
+                        response = "got it, i'll let Elio know — he'll get back to you directly"
+                        human_read_delay()
+                        human_typing_delay(response)
+                        send_message(cl, response, thread_id, username)
+                        notify_elio(username, latest_text)
+                        mark_seen(msg_id)
+                        mark_thread_read(cl, thread_id, msg_id)
+                        continue
+                    else:
+                        # Still unclear — re-ask once
+                        mark_seen(msg_id)
+                        continue
+
+                else:
+                    # First time this followed user DMs — ask their preference
+                    set_followed_preference(sender_id, username, "pending")
+                    question = "hey, do you want to chat with Elio's assistant or would you prefer to talk to Elio directly?"
+                    human_read_delay()
+                    human_typing_delay(question)
+                    send_message(cl, question, thread_id, username)
+                    mark_seen(msg_id)
+                    mark_thread_read(cl, thread_id, msg_id)
+                    continue
 
             if item_type != "text":
                 mark_seen(msg_id)

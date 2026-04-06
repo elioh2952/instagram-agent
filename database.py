@@ -23,6 +23,12 @@ def init_db():
             status TEXT DEFAULT 'new',
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
+        CREATE TABLE IF NOT EXISTS followed_users (
+            user_id TEXT PRIMARY KEY,
+            username TEXT,
+            preference TEXT DEFAULT 'pending',
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
     """)
     conn.commit()
     conn.close()
@@ -57,6 +63,23 @@ def get_history(user_id: str, limit: int = 10) -> list[dict]:
 def add_lead(user_id: str, username: str = "", notes: str = ""):
     conn = sqlite3.connect(DB)
     conn.execute("INSERT OR IGNORE INTO leads (user_id, username, notes) VALUES (?, ?, ?)", (user_id, username, notes))
+    conn.commit()
+    conn.close()
+
+def get_followed_preference(user_id: str) -> str:
+    """Returns 'pending', 'agent', or 'personal'."""
+    conn = sqlite3.connect(DB)
+    row = conn.execute("SELECT preference FROM followed_users WHERE user_id = ?", (user_id,)).fetchone()
+    conn.close()
+    return row[0] if row else None
+
+def set_followed_preference(user_id: str, username: str, preference: str):
+    conn = sqlite3.connect(DB)
+    conn.execute("""
+        INSERT INTO followed_users (user_id, username, preference, updated_at)
+        VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(user_id) DO UPDATE SET preference=excluded.preference, updated_at=CURRENT_TIMESTAMP
+    """, (user_id, username, preference))
     conn.commit()
     conn.close()
 
