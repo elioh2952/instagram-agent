@@ -39,7 +39,7 @@ def classify_error(e: Exception) -> str:
 # ── Login ────────────────────────────────────────────────────────────────────
 
 def login(retries: int = 999) -> Client:
-    """Login with infinite retries — never gives up."""
+    """Login with infinite retries. Reuses existing session if still valid."""
     attempt = 0
     while True:
         attempt += 1
@@ -47,12 +47,19 @@ def login(retries: int = 999) -> Client:
             cl = Client()
             if os.path.exists(SESSION_FILE):
                 cl.load_settings(SESSION_FILE)
+                # Test session with a lightweight call before doing full login
+                try:
+                    cl.private_request("direct_v2/inbox/", params={"limit": "1"})
+                    print(f"[OK] Session valid — skipped full login")
+                    return cl
+                except Exception:
+                    pass  # Session dead, fall through to full login
             cl.login(INSTAGRAM_USERNAME, INSTAGRAM_PASSWORD)
             cl.dump_settings(SESSION_FILE)
             print(f"[OK] Logged in (attempt {attempt})")
             return cl
         except Exception as e:
-            wait = min(30 * attempt, 300)  # ramp up: 30s, 60s, 90s … max 5min
+            wait = min(30 * attempt, 300)
             print(f"[!] Login failed (attempt {attempt}): {e} — retrying in {wait}s")
             time.sleep(wait)
 
@@ -251,25 +258,26 @@ def process_inbox(cl: Client):
 # ── Entry points ─────────────────────────────────────────────────────────────
 
 def run():
-    """GitHub Actions: self-healing single run."""
+    """GitHub Actions: loop for 4.5 minutes checking every 10s, self-healing."""
     init_db()
     print("[*] Logging into Instagram...")
     cl = login()
-    attempt = 0
-    while True:
-        attempt += 1
+    print("[*] Polling inbox every 10s for 4.5 minutes...")
+    deadline = time.time() + 270  # 4.5 minutes
+    while time.time() < deadline:
         try:
             process_inbox(cl)
-            print("[*] Done.")
-            break
         except LoginRequired:
-            print(f"[!] Session expired (attempt {attempt}) — re-logging in...")
+            print("[!] Session expired — re-logging in...")
             cl = login()
         except Exception as e:
             err_type = classify_error(e)
-            wait = min(10 * attempt, 60)
-            print(f"[!] Run error (attempt {attempt}, type={err_type}): {e} — retrying in {wait}s")
+            wait = 15 if err_type == "ratelimit" else 5
+            print(f"[!] Error ({err_type}): {e} — retrying in {wait}s")
             time.sleep(wait)
+            continue
+        time.sleep(10)
+    print("[*] Done.")
 
 def run_loop():
     """Local: self-healing infinite loop."""

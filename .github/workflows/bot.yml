@@ -2,10 +2,10 @@ name: Instagram Bot
 
 on:
   schedule:
-    - cron: '*/5 * * * *'   # backup: every 5 min via GitHub
+    - cron: '*/5 * * * *'
   workflow_dispatch:
   repository_dispatch:
-    types: [run-bot]          # triggered by cron-job.org every 1 minute
+    types: [run-bot]
 
 concurrency:
   group: instagram-bot
@@ -14,15 +14,17 @@ concurrency:
 jobs:
   run-bot:
     runs-on: ubuntu-latest
-    timeout-minutes: 2
+    timeout-minutes: 6
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Cache pip
+        uses: actions/cache@v4
         with:
-          python-version: '3.11'
+          path: ~/.cache/pip
+          key: pip-${{ hashFiles('requirements.txt') }}
+          restore-keys: pip-
 
       - name: Install dependencies
         run: pip install instagrapi groq python-dotenv
